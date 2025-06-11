@@ -1,0 +1,21 @@
+name: Deploy qVicuna Flash to Replicate
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Cog
+        uses: replicate/setup-cog@v2
+        
+      - name: Push to Replicate
+        run: cog push r8.im/semihpolat/qvicuna-flash
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
