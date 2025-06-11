@@ -2,20 +2,36 @@ name: Deploy qVicuna Flash to Replicate
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Setup Cog
-        uses: replicate/setup-cog@v2
-        
-      - name: Push to Replicate
-        run: cog push r8.im/semihpolat/qvicuna-flash
-        env:
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install Cog
+      run: |
+        sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+        sudo chmod +x /usr/local/bin/cog
+    
+    - name: Login to Replicate
+      env:
+        REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      run: |
+        echo $REPLICATE_API_TOKEN | cog login --token-stdin
+    
+    - name: Push to Replicate
+      env:
+        REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      run: |
+        cog push r8.im/semihpolat/qvicuna-flash
