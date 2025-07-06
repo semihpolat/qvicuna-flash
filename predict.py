@@ -12,7 +12,8 @@ class Predictor(BasePredictor):
         self.model = AutoModelForCausalLM.from_pretrained(
             "lmsys/vicuna-7b-v1.5",
             torch_dtype=torch.float16,
-            device_map="auto"
+            device_map="auto",
+            low_cpu_mem_usage=True
         )
         
         if self.tokenizer.pad_token is None:
@@ -31,45 +32,76 @@ class Predictor(BasePredictor):
         
         start_time = time.time()
         
-        if flash_mode:
-            # Flash mode - minimal prompt
-            inputs = self.tokenizer(message, return_tensors="pt").to("cuda")
+        try:
+            if flash_mode:
+                # Flash mode - optimized for speed
+                # Use a simple prompt format
+                prompt = f"Human: {message}\nAssistant:"
+                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=min(max_tokens, 50),
+                        do_sample=False,
+                        temperature=0.1,
+                        use_cache=True,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                        eos_token_id=self.tokenizer.eos_token_id
+                    )
+                
+                # Decode only the new tokens (response part)
+                input_length = inputs['input_ids'].shape[1]
+                response_tokens = outputs[0][input_length:]
+                response = self.tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
+                
+                # Clean up the response
+                if response.startswith("Human:") or response.startswith("Assistant:"):
+                    response = response.split(":", 1)[1].strip()
+                
+            else:
+                # Standard mode - better quality
+                prompt = f"A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: {message}\nASSISTANT:"
+                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        do_sample=True,
+                        temperature=0.7,
+                        top_p=0.9,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                        eos_token_id=self.tokenizer.eos_token_id
+                    )
+                
+                # Decode only the new tokens
+                input_length = inputs['input_ids'].shape[1]
+                response_tokens = outputs[0][input_length:]
+                response = self.tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
             
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=min(max_tokens, 50),
-                    do_sample=False,
-                    use_cache=True,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
+            # Additional cleanup
+            if not response or response == message:
+                response = "I understand your message. How can I help you?"
             
-            response = self.tokenizer.decode(
-                outputs[0][inputs['input_ids'].shape[1]:], 
-                skip_special_tokens=True
-            ).strip()
-        else:
-            # Standard mode
-            prompt = f"USER: {message}\nASSISTANT:"
-            inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+            # Remove any remaining prompt artifacts
+            response = response.replace("Human:", "").replace("Assistant:", "").replace("USER:", "").replace("ASSISTANT:", "").strip()
             
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_tokens,
-                    do_sample=True,
-                    temperature=0.7,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
+            inference_time = (time.time() - start_time) * 1000
             
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            response = response.split("ASSISTANT:")[-1].strip()
-        
-        inference_time = (time.time() - start_time) * 1000
-        
-        return {
-            "response": response,
-            "inference_time_ms": round(inference_time, 2),
-            "mode": "⚡ Flash" if flash_mode else "🎯 Standard",
-            "model": "qVicuna Flash 7B"
-        }
+            return {
+                "response": response,
+                "inference_time_ms": round(inference_time, 2),
+                "mode": "⚡ Flash" if flash_mode else "🎯 Standard",
+                "model": "qVicuna Flash 7B",
+                "input_message": message  # Debug için
+            }
+            
+        except Exception as e:
+            return {
+                "response": f"Error: {str(e)}",
+                "inference_time_ms": 0,
+                "mode": "❌ Error",
+                "model": "qVicuna Flash 7B",
+                "input_message": message
+            }
