@@ -1,25 +1,64 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from cog import BasePredictor, Input
+import os
 import time
+
+try:
+    import torch
+    print(f"✅ PyTorch {torch.__version__} loaded successfully")
+except ImportError as e:
+    print(f"❌ PyTorch import failed: {e}")
+    raise
+
+try:
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    print("✅ Transformers loaded successfully")
+except ImportError as e:
+    print(f"❌ Transformers import failed: {e}")
+    raise
+
+try:
+    from cog import BasePredictor, Input
+    print("✅ Cog loaded successfully")
+except ImportError as e:
+    print(f"❌ Cog import failed: {e}")
+    raise
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
         """qVicuna Flash setup"""
         print("🚀 Loading qVicuna Flash...")
         
-        self.tokenizer = AutoTokenizer.from_pretrained("lmsys/vicuna-7b-v1.5")
-        self.model = AutoModelForCausalLM.from_pretrained(
-            "lmsys/vicuna-7b-v1.5",
-            torch_dtype=torch.float16,
-            device_map="auto",
-            low_cpu_mem_usage=True
-        )
+        # Check CUDA availability
+        if torch.cuda.is_available():
+            print(f"✅ CUDA available: {torch.cuda.get_device_name()}")
+            device = "cuda"
+        else:
+            print("⚠️  CUDA not available, using CPU")
+            device = "cpu"
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained("lmsys/vicuna-7b-v1.5")
+            print("✅ Tokenizer loaded successfully")
+        except Exception as e:
+            print(f"❌ Tokenizer loading failed: {e}")
+            raise
+            
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                "lmsys/vicuna-7b-v1.5",
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                device_map="auto" if device == "cuda" else None,
+                low_cpu_mem_usage=True
+            )
+            print("✅ Model loaded successfully")
+        except Exception as e:
+            print(f"❌ Model loading failed: {e}")
+            raise
         
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
         self.model.eval()
+        self.device = device
         print("✅ qVicuna Flash ready!")
 
     def predict(
@@ -37,7 +76,7 @@ class Predictor(BasePredictor):
                 # Flash mode - optimized for speed
                 # Use a simple prompt format
                 prompt = f"Human: {message}\nAssistant:"
-                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
                 
                 with torch.no_grad():
                     outputs = self.model.generate(
@@ -62,7 +101,7 @@ class Predictor(BasePredictor):
             else:
                 # Standard mode - better quality
                 prompt = f"A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\nUSER: {message}\nASSISTANT:"
-                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
                 
                 with torch.no_grad():
                     outputs = self.model.generate(
@@ -94,6 +133,7 @@ class Predictor(BasePredictor):
                 "inference_time_ms": round(inference_time, 2),
                 "mode": "⚡ Flash" if flash_mode else "🎯 Standard",
                 "model": "qVicuna Flash 7B",
+                "device": self.device,
                 "input_message": message  # Debug için
             }
             
@@ -103,5 +143,7 @@ class Predictor(BasePredictor):
                 "inference_time_ms": 0,
                 "mode": "❌ Error",
                 "model": "qVicuna Flash 7B",
-                "input_message": message
+                "device": getattr(self, 'device', 'unknown'),
+                "input_message": message,
+                "error_details": str(e)
             }
