@@ -15,7 +15,7 @@ Ultra hızlı AI chat sistemi - Replicate üzerinde çalışan optimize edilmiş
 import replicate
 
 output = replicate.run(
-    "semihpolat/qvicuna-flash",
+    "semihpolat/q-flash",
     input={
         "message": "Merhaba!",
         "flash_mode": True,
