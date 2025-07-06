@@ -128,22 +128,14 @@ class Predictor(BasePredictor):
             
             inference_time = (time.time() - start_time) * 1000
             
+            # Simple output - only response and inference time
             return {
                 "response": response,
-                "inference_time_ms": round(inference_time, 2),
-                "mode": "⚡ Flash" if flash_mode else "🎯 Standard",
-                "model": "qVicuna Flash 7B",
-                "device": self.device,
-                "input_message": message  # Debug için
+                "inference_time_ms": round(inference_time, 2)
             }
             
         except Exception as e:
             return {
                 "response": f"Error: {str(e)}",
-                "inference_time_ms": 0,
-                "mode": "❌ Error",
-                "model": "qVicuna Flash 7B",
-                "device": getattr(self, 'device', 'unknown'),
-                "input_message": message,
-                "error_details": str(e)
+                "inference_time_ms": 0
             }
